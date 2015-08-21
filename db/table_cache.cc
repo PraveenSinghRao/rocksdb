@@ -86,11 +86,16 @@ Status TableCache::GetTableReader(
     const EnvOptions& env_options,
     const InternalKeyComparator& internal_comparator, const FileDescriptor& fd,
     bool advise_random_on_open, bool record_read_stats,
-    HistogramImpl* file_read_hist, unique_ptr<TableReader>* table_reader) {
+    HistogramImpl* file_read_hist, bool add_readahead,
+    unique_ptr<TableReader>* table_reader) {
   std::string fname =
       TableFileName(ioptions_.db_paths, fd.GetNumber(), fd.GetPathId());
   unique_ptr<RandomAccessFile> file;
   Status s = ioptions_.env->NewRandomAccessFile(fname, &file, env_options);
+  if (add_readahead) {
+    // TODO(icanadi) add configuration option
+    file = NewReadaheadRandomAccessFile(std::move(file), 2 * 1024 * 1024);
+  }
   RecordTick(ioptions_.statistics, NO_FILE_OPENS);
   if (s.ok()) {
     if (advise_random_on_open) {
@@ -129,7 +134,7 @@ Status TableCache::FindTable(const EnvOptions& env_options,
     unique_ptr<TableReader> table_reader;
     s = GetTableReader(env_options, internal_comparator, fd,
                        ioptions_.advise_random_on_open, record_read_stats,
-                       file_read_hist, &table_reader);
+                       file_read_hist, false, &table_reader);
     if (!s.ok()) {
       assert(table_reader == nullptr);
       RecordTick(ioptions_.statistics, NO_FILE_ERRORS);
@@ -163,7 +168,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   if (create_new_table_reader) {
     unique_ptr<TableReader> table_reader_unique_ptr;
     Status s = GetTableReader(env_options, icomparator, fd, false, false,
-                              nullptr, &table_reader_unique_ptr);
+                              nullptr, true, &table_reader_unique_ptr);
     if (!s.ok()) {
       return NewErrorIterator(s, arena);
     }

@@ -872,6 +872,9 @@ class WritableFileWrapper : public WritableFile {
 // *base_env must remain live while the result is in use.
 Env* NewMemEnv(Env* base_env);
 
+std::unique_ptr<RandomAccessFile> NewReadaheadRandomAccessFile(
+    std::unique_ptr<RandomAccessFile> file, size_t readahead_size);
+
 }  // namespace rocksdb
 
 #endif  // STORAGE_ROCKSDB_INCLUDE_ENV_H_

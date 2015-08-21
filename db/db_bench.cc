@@ -2174,6 +2174,7 @@ class Benchmark {
     options.memtable_prefix_bloom_bits = FLAGS_memtable_bloom_bits;
     options.bloom_locality = FLAGS_bloom_locality;
     options.max_open_files = FLAGS_open_files;
+    options.new_table_reader_for_compaction_inputs = true;
     options.statistics = dbstats;
     if (FLAGS_enable_io_prio) {
       FLAGS_env->LowerThreadPoolIOPriority(Env::LOW);

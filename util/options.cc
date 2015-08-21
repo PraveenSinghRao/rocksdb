@@ -240,7 +240,7 @@ DBOptions::DBOptions()
       advise_random_on_open(true),
       db_write_buffer_size(0),
       access_hint_on_compaction_start(NORMAL),
-      new_table_reader_for_compaction_inputs(false),
+      new_table_reader_for_compaction_inputs(true),
       use_adaptive_mutex(false),
       bytes_per_sync(0),
       wal_bytes_per_sync(0),

@@ -9,6 +9,7 @@
 
 #include "rocksdb/env.h"
 
+#include <mutex>
 #include <thread>
 #include "port/port.h"
 #include "port/sys_time.h"
@@ -307,5 +308,85 @@ EnvOptions::EnvOptions() {
   AssignEnvOptions(this, options);
 }
 
+class ReadaheadRandomAccessFile : public RandomAccessFile {
+ public:
+  ReadaheadRandomAccessFile(std::unique_ptr<RandomAccessFile> file,
+                            size_t readahead_size)
+      : file_(std::move(file)),
+        readahead_size_(readahead_size),
+        buffer_(new char[readahead_size_]),
+        buffer_offset_(0),
+        buffer_len_(0) {}
+
+  virtual Status Read(uint64_t offset, size_t n, Slice* result,
+                      char* scratch) const override {
+    if (n >= readahead_size_) {
+      return file_->Read(offset, n, result, scratch);
+    }
+
+    std::unique_lock<std::mutex> lk(lock_);
+
+    size_t copied = 0;
+    // if offset between [buffer_offset_, buffer_offset_ + buffer_len>
+    if (offset >= buffer_offset_ && offset < buffer_len_ + buffer_offset_) {
+      uint64_t offset_in_buffer = offset - buffer_offset_;
+      copied = std::min(static_cast<uint64_t>(buffer_len_) - offset_in_buffer,
+                        static_cast<uint64_t>(n));
+      memcpy(scratch, buffer_.get() + offset_in_buffer, copied);
+      if (copied == n) {
+        // fully cached
+        *result = Slice(scratch, n);
+        return Status::OK();
+      }
+    }
+    Slice readahead_result;
+    Status s = file_->Read(offset + copied, readahead_size_, &readahead_result,
+                           buffer_.get());
+    if (!s.ok()) {
+      return s;
+    }
+
+    auto left_to_copy = std::min(readahead_result.size(), n - copied);
+    memcpy(scratch + copied, readahead_result.data(), left_to_copy);
+    *result = Slice(scratch, copied + left_to_copy);
+
+    if (readahead_result.data() == buffer_.get()) {
+      buffer_offset_ = offset + copied;
+      buffer_len_ = readahead_result.size();
+    } else {
+      buffer_len_ = 0;
+    }
+
+    return Status::OK();
+  }
+
+#ifdef OS_LINUX
+  virtual size_t GetUniqueId(char* id, size_t max_size) const override {
+    return file_->GetUniqueId(id, max_size);
+  }
+#endif
+
+  virtual void Hint(AccessPattern pattern) override { file_->Hint(pattern); }
+
+  virtual Status InvalidateCache(size_t offset, size_t length) override {
+    return file_->InvalidateCache(offset, length);
+  }
+
+ private:
+  std::unique_ptr<RandomAccessFile> file_;
+  size_t readahead_size_;
+
+  mutable std::mutex lock_;
+  mutable std::unique_ptr<char[]> buffer_;
+  mutable uint64_t buffer_offset_;
+  mutable size_t buffer_len_;
+};
+
+std::unique_ptr<RandomAccessFile> NewReadaheadRandomAccessFile(
+    std::unique_ptr<RandomAccessFile> file, size_t readahead_size) {
+  std::unique_ptr<ReadaheadRandomAccessFile> wrapped_file(
+      new ReadaheadRandomAccessFile(std::move(file), readahead_size));
+  return std::move(wrapped_file);
+}
 
 }  // namespace rocksdb
