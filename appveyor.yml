@@ -1,10 +1,22 @@
 version: 1.0.{build}
 before_build:
+- git clone https://github.com/gflags/gflags.git .\gflags
+- md %APPVEYOR_BUILD_FOLDER%\gflags\build
+- cd %APPVEYOR_BUILD_FOLDER%\gflags\build
+- cmake -G "Visual Studio 12 Win64" ..
+- msbuild ALL_BUILD.vcxproj
+- cd ..
+- set thirdparty_home=%APPVEYOR_BUILD_FOLDER%\thirdparty_home
+- md %APPVEYOR_BUILD_FOLDER%\thirdparty_home
+- md %APPVEYOR_BUILD_FOLDER%\thirdparty_home\Gflags.Library
+- md %APPVEYOR_BUILD_FOLDER%\thirdparty_home\Gflags.Library\inc\include
+- xcopy /s %APPVEYOR_BUILD_FOLDER%\gflags\build\include %APPVEYOR_BUILD_FOLDER%\thirdparty_home\Gflags.Library\inc\include
+- md %APPVEYOR_BUILD_FOLDER%\thirdparty_home\Gflags.Library\bin\debug\amd64
+- copy %APPVEYOR_BUILD_FOLDER%\gflags\build\lib\debug\*.lib %APPVEYOR_BUILD_FOLDER%\thirdparty_home\Gflags.Library\bin\debug\amd64
 - md %APPVEYOR_BUILD_FOLDER%\build
 - cd %APPVEYOR_BUILD_FOLDER%\build
-- cmake -G "Visual Studio 12 Win64" ..
+- cmake -G "Visual Studio 12 Win64" -DGFLAGS=1 ..
 - cd ..
 build:
   project: build\ALL_BUILD.vcxproj
   verbosity: minimal
-test: off
